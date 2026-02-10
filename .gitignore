@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Data (too large for git)
+Datasets/
+data/processed/
+
+# Models (binary artifacts)
+models/*.joblib
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Temp
+*.tmp
+tmpclaude-*/
