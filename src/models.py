@@ -222,11 +222,14 @@ def save_model(
     # Store XGBoost params if available
     if hasattr(model, "get_params"):
         params = model.get_params()
-        # Keep only JSON-serialisable scalar params
-        meta["params"] = {
-            k: v for k, v in params.items()
-            if isinstance(v, (int, float, str, bool, type(None)))
-        }
+        # Keep only JSON-serialisable scalar params, convert NaN to None
+        clean_params: dict[str, Any] = {}
+        for k, v in params.items():
+            if isinstance(v, float) and np.isnan(v):
+                clean_params[k] = None
+            elif isinstance(v, (int, float, str, bool, type(None))):
+                clean_params[k] = v
+        meta["params"] = clean_params
 
     if extra_meta:
         meta.update(extra_meta)

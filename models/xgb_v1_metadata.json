@@ -1,7 +1,7 @@
 {
   "model_name": "xgb_v1",
   "dataset": "give_me_some_credit/cs-training.csv",
-  "date": "2026-02-10T20:53:38.201126+00:00",
+  "date": "2026-02-10T21:04:04.486840+00:00",
   "seed": 42,
   "training_rows": 104999,
   "validation_rows": 22500,
@@ -39,7 +39,7 @@
     "max_depth": 5,
     "max_leaves": null,
     "min_child_weight": 5,
-    "missing": NaN,
+    "missing": null,
     "monotone_constraints": null,
     "multi_strategy": null,
     "n_estimators": 500,
