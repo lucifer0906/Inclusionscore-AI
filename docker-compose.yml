@@ -1,7 +1,11 @@
-# Placeholder — will be completed in Phase 5
 version: "3.9"
 services:
   web:
     build: .
     ports:
       - "8000:8000"
+    environment:
+      - API_TOKEN=testtoken
+    volumes:
+      - ./models:/app/models
+    restart: unless-stopped

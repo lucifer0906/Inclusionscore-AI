@@ -56,10 +56,14 @@ def clean_df(df: pd.DataFrame, *, fit: bool = True,
     df = df[df["age"] > 0].reset_index(drop=True)
 
     # 2. Impute missing values
-    df["MonthlyIncome"] = df["MonthlyIncome"].fillna(df["MonthlyIncome"].median())
-    df["NumberOfDependents"] = df["NumberOfDependents"].fillna(
-        df["NumberOfDependents"].mode()[0]
-    )
+    income_fill = df["MonthlyIncome"].median()
+    if pd.isna(income_fill):
+        income_fill = 0.0  # all values NaN (e.g. single-row inference)
+    df["MonthlyIncome"] = df["MonthlyIncome"].fillna(income_fill)
+
+    dep_mode = df["NumberOfDependents"].mode()
+    dep_fill = dep_mode.iloc[0] if len(dep_mode) > 0 else 0.0
+    df["NumberOfDependents"] = df["NumberOfDependents"].fillna(dep_fill)
 
     # 3. Cap outliers – revolving utilization
     df["RevolvingUtilizationOfUnsecuredLines"] = df[
