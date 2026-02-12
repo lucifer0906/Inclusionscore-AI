@@ -10,6 +10,7 @@ many fair-lending regulations (e.g., ECOA).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -20,11 +21,12 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 
-from src.config import REPORTS_DIR, SCORE_THRESHOLDS
+from src.config import MODEL_DIR, REPORTS_DIR, SCORE_THRESHOLDS
 from src.models import load_model
 from src.features import load_processed, TARGET_COL
 
 FAIRNESS_REPORT_PATH = REPORTS_DIR / "fairness_report.md"
+FAIR_THRESHOLDS_PATH = MODEL_DIR / "fair_thresholds.json"
 
 # Age bins used as proxy subgroups
 AGE_BINS = [(18, 30, "18-30"), (31, 45, "31-45"), (46, 60, "46-60"), (61, 120, "61+")]
@@ -128,6 +130,94 @@ def compute_demographic_parity(subgroup_df: pd.DataFrame) -> dict[str, Any]:
         "parity_gap": round(gap, 4),
         "pass": gap <= 0.15,  # common threshold
     }
+
+
+def calibrate_fair_thresholds(
+    y_proba: np.ndarray,
+    groups: pd.Series,
+    *,
+    base_threshold: float | None = None,
+    target_di: float = 0.80,
+    max_parity_gap: float = 0.14,
+) -> dict[str, float]:
+    """Find per-group approval thresholds that satisfy DI and parity targets.
+
+    For the best-performing group, keep the base threshold.  For each
+    under-performing group, raise the approval threshold (accept higher
+    default probability) until its approval rate reaches at least
+    ``target_di`` × the best group's rate AND is within ``max_parity_gap``
+    of the best group.
+
+    Parameters
+    ----------
+    y_proba : np.ndarray
+        Predicted default probabilities.
+    groups : pd.Series
+        Age-group labels (same length as y_proba).
+    base_threshold : float | None
+        Starting approval threshold.  Defaults to SCORE_THRESHOLDS["APPROVE"].
+    target_di : float
+        Minimum disparate impact ratio (default 0.80 = 4/5 rule).
+    max_parity_gap : float
+        Maximum allowed difference between best and worst approval rates.
+
+    Returns
+    -------
+    dict[str, float]
+        Mapping of group label → calibrated approval threshold.
+    """
+    if base_threshold is None:
+        base_threshold = SCORE_THRESHOLDS["APPROVE"]
+
+    # Compute approval rate per group at base threshold
+    group_labels = sorted(groups.unique())
+    rates: dict[str, float] = {}
+    for g in group_labels:
+        mask = groups == g
+        rates[g] = float((y_proba[mask] <= base_threshold).mean())
+
+    best_rate = max(rates.values())
+    # Target must satisfy both DI and parity gap
+    target_rate = max(target_di * best_rate, best_rate - max_parity_gap)
+
+    thresholds: dict[str, float] = {}
+    for g in group_labels:
+        if rates[g] >= target_rate:
+            thresholds[g] = base_threshold
+        else:
+            # Binary search for threshold that achieves target_rate
+            gp = y_proba[groups == g]
+            lo, hi = base_threshold, 1.0
+            for _ in range(100):
+                mid = (lo + hi) / 2
+                achieved = float((gp <= mid).mean())
+                if achieved >= target_rate:
+                    hi = mid
+                else:
+                    lo = mid
+            thresholds[g] = round(hi, 6)
+
+    return thresholds
+
+
+def save_fair_thresholds(
+    thresholds: dict[str, float],
+    output_path: Path | None = None,
+) -> Path:
+    """Persist calibrated thresholds to JSON."""
+    output_path = output_path or FAIR_THRESHOLDS_PATH
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(thresholds, indent=2), encoding="utf-8")
+    print(f"Fair thresholds saved to {output_path}")
+    return output_path
+
+
+def load_fair_thresholds(path: Path | None = None) -> dict[str, float]:
+    """Load calibrated thresholds from JSON."""
+    path = path or FAIR_THRESHOLDS_PATH
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _write_report(
@@ -257,6 +347,32 @@ def run_audit(
 
     _write_report(subgroup_df, di_result, dp_result, output_path)
 
+    # Calibrate and save fair thresholds if DI fails
+    fair_thresholds = calibrate_fair_thresholds(y_proba, groups)
+    save_fair_thresholds(fair_thresholds)
+
+    # Re-compute metrics with calibrated thresholds to show improvement
+    fair_approvals = pd.Series(False, index=groups.index)
+    for g in sorted(groups.unique()):
+        mask = groups == g
+        thresh = fair_thresholds.get(g, SCORE_THRESHOLDS["APPROVE"])
+        fair_approvals[mask] = y_proba[mask] <= thresh
+
+    fair_rows = []
+    for g in sorted(groups.unique()):
+        mask = groups == g
+        fair_rows.append({
+            "group": g,
+            "approval_rate": round(float(fair_approvals[mask].mean()), 4),
+        })
+    fair_df = pd.DataFrame(fair_rows)
+    fair_di = compute_disparate_impact(fair_df)
+    fair_dp = compute_demographic_parity(fair_df)
+    print(f"After recalibration — DI: {fair_di['di_ratio']:.4f} "
+          f"({'PASS' if fair_di['pass'] else 'FAIL'}), "
+          f"Parity gap: {fair_dp['parity_gap']:.4f} "
+          f"({'PASS' if fair_dp['pass'] else 'FAIL'})")
+
     # Also save a subgroup AUC bar chart
     fig, ax = plt.subplots(figsize=(7, 4))
     valid = subgroup_df.dropna(subset=["auc"])
@@ -277,4 +393,9 @@ def run_audit(
         "subgroup_metrics": subgroup_df.to_dict(orient="records"),
         "disparate_impact": di_result,
         "demographic_parity": dp_result,
+        "fair_thresholds": fair_thresholds,
+        "post_calibration": {
+            "disparate_impact": fair_di,
+            "demographic_parity": fair_dp,
+        },
     }

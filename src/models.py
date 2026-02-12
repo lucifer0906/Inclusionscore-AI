@@ -18,6 +18,7 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     f1_score,
+    precision_recall_curve,
     precision_score,
     recall_score,
     roc_auc_score,
@@ -75,6 +76,32 @@ def evaluate(
         print()
 
     return metrics
+
+
+def find_optimal_threshold(
+    model,
+    X: pd.DataFrame,
+    y: pd.Series,
+) -> dict[str, float]:
+    """Find optimal classification threshold by maximizing F1-score.
+
+    Returns
+    -------
+    dict
+        Contains ``optimal_threshold``, ``f1_at_threshold``,
+        ``precision_at_threshold``, ``recall_at_threshold``.
+    """
+    y_proba = model.predict_proba(X)[:, 1]
+    precisions, recalls, thresholds = precision_recall_curve(y, y_proba)
+    # F1 = 2 * (precision * recall) / (precision + recall)
+    f1s = 2 * (precisions[:-1] * recalls[:-1]) / (precisions[:-1] + recalls[:-1] + 1e-12)
+    best_idx = int(np.argmax(f1s))
+    return {
+        "optimal_threshold": float(thresholds[best_idx]),
+        "f1_at_threshold": float(f1s[best_idx]),
+        "precision_at_threshold": float(precisions[best_idx]),
+        "recall_at_threshold": float(recalls[best_idx]),
+    }
 
 
 # ── Baseline: Logistic Regression ────────────────────────────────────────
@@ -259,3 +286,15 @@ def load_model(path: str | Path):
     if not path.exists():
         raise FileNotFoundError(f"Model file not found: {path}")
     return joblib.load(path)
+
+
+def load_model_metadata(model_path: str | Path) -> dict[str, Any]:
+    """Load the metadata JSON that accompanies a model artifact."""
+    model_path = Path(model_path)
+    meta_path = model_path.with_name(
+        model_path.stem + "_metadata.json"
+    )
+    if not meta_path.exists():
+        return {}
+    with open(meta_path) as f:
+        return json.load(f)

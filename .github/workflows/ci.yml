@@ -2,17 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      API_TOKEN: ci-test-token
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt
-      - run: pytest tests/
+      - run: python -m src.train
+      - run: pytest tests/ -v

@@ -44,7 +44,7 @@ def test_health(client):
 
 def test_score_requires_auth(client):
     resp = client.post("/score", json=VALID_PAYLOAD)
-    assert resp.status_code == 401  # missing credentials
+    assert resp.status_code == 403  # missing credentials
 
 
 def test_score_rejects_bad_token(client):
@@ -98,3 +98,31 @@ def test_score_rejects_missing_field(client):
     payload = {k: v for k, v in VALID_PAYLOAD.items() if k != "age"}
     resp = client.post("/score", json=payload, headers=AUTH_HEADER)
     assert resp.status_code == 422
+
+
+# ── Batch scoring ────────────────────────────────────────────────────────
+
+
+def test_batch_score_valid(client):
+    batch_payload = {"applicants": [VALID_PAYLOAD, VALID_PAYLOAD]}
+    resp = client.post("/score/batch", json=batch_payload, headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 2
+    assert len(body["results"]) == 2
+    for result in body["results"]:
+        assert result["decision"] in ("APPROVE", "REVIEW", "REJECT")
+        assert 0.0 <= result["score"] <= 1.0
+
+
+def test_batch_score_requires_auth(client):
+    batch_payload = {"applicants": [VALID_PAYLOAD]}
+    resp = client.post("/score/batch", json=batch_payload)
+    assert resp.status_code == 403
+
+
+def test_batch_score_empty(client):
+    batch_payload = {"applicants": []}
+    resp = client.post("/score/batch", json=batch_payload, headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 0

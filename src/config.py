@@ -5,6 +5,7 @@ All project-wide constants, paths, and hyperparameters live here so that
 every module imports a single source of truth.
 """
 
+import os
 from pathlib import Path
 
 # ── Paths ────────────────────────────────────────────────────────────────
@@ -27,9 +28,12 @@ PRIMARY_TEST_FILE = "cs-test.csv"
 MODEL_NAME = "xgb_v1"
 
 # ── API / Security ───────────────────────────────────────────────────────
-API_TOKEN = "testtoken"                        # demo-only bearer token
+API_TOKEN = os.environ.get("API_TOKEN", "changeme")
 SCORE_THRESHOLDS = {
     "APPROVE": 0.3,   # predicted default prob <= 0.3 → approve
     "REVIEW": 0.6,    # 0.3 < prob <= 0.6 → manual review
     # prob > 0.6 → reject
 }
+
+# ── Fairness ─────────────────────────────────────────────────────────────
+FAIRNESS_ENABLED = os.environ.get("FAIRNESS_ENABLED", "true").lower() == "true"

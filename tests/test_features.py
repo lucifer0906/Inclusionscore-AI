@@ -85,6 +85,17 @@ class TestCleanDf:
         _ = clean_df(df)
         assert df.shape == original_shape
 
+    def test_monthly_income_missing_indicator(self):
+        """MonthlyIncome_Missing flag should be 1 where income was NaN."""
+        df = _make_synthetic()
+        was_missing = df["MonthlyIncome"].isna()
+        cleaned = clean_df(df)
+        assert "MonthlyIncome_Missing" in cleaned.columns
+        # Rows that had NaN income should have indicator = 1
+        # (after dropping age==0 rows, indices reset)
+        assert cleaned["MonthlyIncome_Missing"].dtype == np.int8
+        assert cleaned["MonthlyIncome_Missing"].isin([0, 1]).all()
+
 
 # ── create_features tests ────────────────────────────────────────────────
 

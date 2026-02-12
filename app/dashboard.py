@@ -1,0 +1,160 @@
+"""Streamlit dashboard for InclusionScore AI.
+
+Interactive form for applicant data entry with real-time scoring,
+SHAP waterfall visualisation, and counterfactual suggestions.
+
+Run:  streamlit run app/dashboard.py
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path for src imports
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+
+from src.api import ApplicantInput, score as score_applicant
+from src.counterfactual import generate_counterfactuals
+
+st.set_page_config(
+    page_title="InclusionScore AI",
+    page_icon="🏦",
+    layout="wide",
+)
+
+st.title("InclusionScore AI")
+st.markdown("**AI-powered alternate credit scoring for the unbanked & under-banked**")
+st.divider()
+
+# ── Sidebar: applicant input form ────────────────────────────────────────
+with st.sidebar:
+    st.header("Applicant Information")
+
+    age = st.number_input("Age", min_value=18, max_value=120, value=35)
+    monthly_income = st.number_input(
+        "Monthly Income ($)", min_value=0.0, value=5000.0, step=100.0
+    )
+    debt_ratio = st.number_input(
+        "Debt Ratio (monthly debt / income)", min_value=0.0, value=0.3, step=0.01,
+        format="%.4f",
+    )
+    revolving_util = st.number_input(
+        "Revolving Utilization", min_value=0.0, value=0.5, step=0.01,
+        format="%.4f",
+        help="Total revolving balance / credit limit",
+    )
+    open_credit_lines = st.number_input(
+        "Open Credit Lines & Loans", min_value=0, value=8
+    )
+    real_estate_loans = st.number_input(
+        "Real Estate Loans", min_value=0, value=1
+    )
+    dependents = st.number_input("Number of Dependents", min_value=0, value=1)
+
+    st.subheader("Delinquency History")
+    times_30_59 = st.number_input(
+        "Times 30-59 Days Past Due", min_value=0, value=0
+    )
+    times_60_89 = st.number_input(
+        "Times 60-89 Days Past Due", min_value=0, value=0
+    )
+    times_90_plus = st.number_input(
+        "Times 90+ Days Late", min_value=0, value=0
+    )
+
+    submit = st.button("Score Applicant", type="primary", use_container_width=True)
+
+# ── Main panel: results ──────────────────────────────────────────────────
+if submit:
+    applicant = ApplicantInput(
+        RevolvingUtilizationOfUnsecuredLines=revolving_util,
+        age=age,
+        **{"NumberOfTime30-59DaysPastDueNotWorse": times_30_59},
+        DebtRatio=debt_ratio,
+        MonthlyIncome=monthly_income,
+        NumberOfOpenCreditLinesAndLoans=open_credit_lines,
+        NumberOfTimes90DaysLate=times_90_plus,
+        NumberRealEstateLoansOrLines=real_estate_loans,
+        **{"NumberOfTime60-89DaysPastDueNotWorse": times_60_89},
+        NumberOfDependents=float(dependents),
+    )
+
+    with st.spinner("Running model..."):
+        result = score_applicant(applicant)
+
+    # Decision banner
+    color_map = {"APPROVE": "green", "REVIEW": "orange", "REJECT": "red"}
+    icon_map = {"APPROVE": "✅", "REVIEW": "⚠️", "REJECT": "❌"}
+    decision = result.decision
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Default Probability", f"{result.score:.4f}")
+    with col2:
+        st.metric("Decision", f"{icon_map.get(decision, '')} {decision}")
+    with col3:
+        st.metric("Model Version", result.model_version)
+
+    st.divider()
+
+    # SHAP contributions
+    st.subheader("Top Feature Contributions (SHAP)")
+    contrib_data = pd.DataFrame([
+        {
+            "Feature": fc.feature,
+            "Value": round(fc.value, 4),
+            "Contribution": round(fc.contribution, 4),
+        }
+        for fc in result.top_features
+    ])
+
+    if not contrib_data.empty:
+        # Horizontal bar chart
+        chart_data = contrib_data.set_index("Feature")["Contribution"].sort_values()
+        colors = ["#e74c3c" if v > 0 else "#2ecc71" for v in chart_data.values]
+        st.bar_chart(chart_data, horizontal=True)
+        st.dataframe(contrib_data, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # Counterfactual explanations
+    if decision != "APPROVE":
+        st.subheader("How to Improve Your Score")
+        st.markdown(
+            "The following changes could help move the decision to **APPROVE**:"
+        )
+        suggestions = generate_counterfactuals(
+            applicant, result.score, decision
+        )
+        if suggestions:
+            for i, s in enumerate(suggestions, 1):
+                st.info(f"**Suggestion {i}:** {s['description']}")
+        else:
+            st.warning(
+                "No simple single-feature change found to flip the decision. "
+                "Multiple factors may need improvement simultaneously."
+            )
+    else:
+        st.success("This applicant qualifies for approval. No changes needed.")
+
+    st.divider()
+    st.caption(
+        "InclusionScore AI uses SHAP (SHapley Additive exPlanations) for "
+        "per-applicant explainability and fairness-calibrated thresholds "
+        "across age groups to ensure equitable outcomes."
+    )
+else:
+    st.info("Fill in the applicant details in the sidebar and click **Score Applicant**.")
+    st.markdown("""
+    ### Features
+    - **Real-time scoring** with XGBoost model (Optuna-tuned)
+    - **Per-applicant SHAP explanations** showing which factors drive the decision
+    - **Fairness-calibrated thresholds** ensuring equitable treatment across age groups
+    - **Counterfactual suggestions** for rejected applicants showing how to improve
+    """)

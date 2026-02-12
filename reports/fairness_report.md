@@ -14,27 +14,27 @@ regulations (e.g., ECOA) and correlates with credit access patterns.
 
 | group   |   count |   base_rate |    auc |   approval_rate |   avg_score |
 |:--------|--------:|------------:|-------:|----------------:|------------:|
-| 18-30   |    1566 |   0.113665  | 0.8123 |          0.3716 |      0.4398 |
-| 31-45   |    6104 |   0.0969856 | 0.8337 |          0.4916 |      0.3781 |
-| 46-60   |    7974 |   0.0672185 | 0.8628 |          0.6152 |      0.3025 |
-| 61+     |    6856 |   0.0288798 | 0.8478 |          0.8489 |      0.1574 |
+| 18-30   |    1566 |   0.113665  | 0.8261 |          0.3851 |      0.4328 |
+| 31-45   |    6104 |   0.0969856 | 0.8399 |          0.4964 |      0.3696 |
+| 46-60   |    7974 |   0.0672185 | 0.8642 |          0.6193 |      0.294  |
+| 61+     |    6856 |   0.0288798 | 0.8625 |          0.8511 |      0.1599 |
 
 ## Disparate Impact Analysis
 
 | Metric | Value |
 |--------|-------|
-| Best group | 61+ (approval rate 84.89%) |
-| Worst group | 18-30 (approval rate 37.16%) |
-| DI ratio | 0.4377 |
+| Best group | 61+ (approval rate 85.11%) |
+| Worst group | 18-30 (approval rate 38.51%) |
+| DI ratio | 0.4525 |
 | **Result** | **FAIL** |
 
 ## Demographic Parity
 
 | Metric | Value |
 |--------|-------|
-| Max approval rate | 84.89% |
-| Min approval rate | 37.16% |
-| Parity gap | 0.4773 |
+| Max approval rate | 85.11% |
+| Min approval rate | 38.51% |
+| Parity gap | 0.4660 |
 | **Result** | **FAIL** |
 
 ## Mitigation Recommendations

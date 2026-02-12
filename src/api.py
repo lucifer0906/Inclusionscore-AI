@@ -11,18 +11,48 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+import shap
 from pydantic import BaseModel, Field
 
-from src.config import API_TOKEN, MODEL_DIR, MODEL_NAME, SCORE_THRESHOLDS
+from src.config import (
+    API_TOKEN, FAIRNESS_ENABLED, MODEL_DIR, MODEL_NAME, SCORE_THRESHOLDS,
+)
+from src.fairness import AGE_BINS, load_fair_thresholds
 from src.features import clean_df, create_features
-from src.models import load_model
+from src.models import load_model, load_model_metadata
 
-# Pre-computed from training data (99th percentile of DebtRatio after
-# dropping age==0).  Used by clean_df(fit=False) at inference time.
+# Pre-computed fallback from training data (99th percentile of DebtRatio).
+# Overridden at runtime if metadata contains preprocessing.debt_ratio_cap.
 _DEBT_RATIO_CAP = 4979.08
 
-# Load model once at import time
-_model = load_model(MODEL_DIR / f"{MODEL_NAME}.joblib")
+# Lazy-loaded model and SHAP explainer (initialised on first request)
+_model = None
+_explainer = None
+_fair_thresholds: dict[str, float] = {}
+
+
+def _get_model():
+    """Return the cached model, loading it on first call."""
+    global _model, _explainer, _fair_thresholds, _DEBT_RATIO_CAP
+    if _model is None:
+        model_path = MODEL_DIR / f"{MODEL_NAME}.joblib"
+        _model = load_model(model_path)
+        _explainer = shap.TreeExplainer(_model)
+        if FAIRNESS_ENABLED:
+            _fair_thresholds = load_fair_thresholds()
+        # Load preprocessing params from metadata if available
+        meta = load_model_metadata(model_path)
+        preproc = meta.get("preprocessing", {})
+        if "debt_ratio_cap" in preproc and preproc["debt_ratio_cap"] is not None:
+            _DEBT_RATIO_CAP = preproc["debt_ratio_cap"]
+    return _model
+
+
+def _get_explainer():
+    """Return the cached SHAP TreeExplainer."""
+    if _explainer is None:
+        _get_model()  # triggers lazy init of both
+    return _explainer
 
 
 # ── Pydantic schemas ─────────────────────────────────────────────────────
@@ -83,11 +113,28 @@ class ScoreResponse(BaseModel):
 
 # ── Core scoring logic ───────────────────────────────────────────────────
 
-def _make_decision(score: float) -> str:
-    """Map a default probability to APPROVE / REVIEW / REJECT."""
-    if score <= SCORE_THRESHOLDS["APPROVE"]:
+def _age_group(age: int) -> str:
+    """Map age to its fairness group label."""
+    for lo, hi, lbl in AGE_BINS:
+        if lo <= age <= hi:
+            return lbl
+    return "unknown"
+
+
+def _make_decision(prob: float, age: int | None = None) -> str:
+    """Map a default probability to APPROVE / REVIEW / REJECT.
+
+    When fairness-aware thresholds are loaded and an age is provided,
+    uses the group-specific approval threshold instead of the global one.
+    """
+    approve_thresh = SCORE_THRESHOLDS["APPROVE"]
+    if FAIRNESS_ENABLED and _fair_thresholds and age is not None:
+        group = _age_group(age)
+        approve_thresh = _fair_thresholds.get(group, approve_thresh)
+
+    if prob <= approve_thresh:
         return "APPROVE"
-    elif score <= SCORE_THRESHOLDS["REVIEW"]:
+    elif prob <= SCORE_THRESHOLDS["REVIEW"]:
         return "REVIEW"
     return "REJECT"
 
@@ -127,18 +174,20 @@ def prepare_input(applicant: ApplicantInput) -> pd.DataFrame:
 def score(applicant: ApplicantInput) -> ScoreResponse:
     """Score a single applicant and return structured response."""
     X = prepare_input(applicant)
+    model = _get_model()
+    explainer = _get_explainer()
 
-    proba = float(_model.predict_proba(X)[0, 1])
-    decision = _make_decision(proba)
+    proba = float(model.predict_proba(X)[0, 1])
+    decision = _make_decision(proba, age=applicant.age)
 
-    # Feature contributions via model's internal feature importances
-    # (lightweight alternative to running SHAP per request)
-    importances = _model.feature_importances_
+    # Per-applicant SHAP values for genuine explainability
+    shap_values = explainer.shap_values(X)
+    contributions = shap_values[0]  # single-row array
     feature_names = list(X.columns)
     values = X.iloc[0].values
 
     contribs = sorted(
-        zip(feature_names, values, importances),
+        zip(feature_names, values, contributions),
         key=lambda t: abs(t[2]),
         reverse=True,
     )

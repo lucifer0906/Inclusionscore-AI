@@ -1,14 +1,16 @@
 """FastAPI application entrypoint.
 
 Exposes:
-- GET  /health  -- liveness check (no auth)
-- POST /score   -- score a single applicant (bearer-token auth)
+- GET  /health       -- liveness check (no auth)
+- POST /score        -- score a single applicant (bearer-token auth)
+- POST /score/batch  -- score multiple applicants (bearer-token auth)
 """
 
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
 
 from src.api import ApplicantInput, ScoreResponse, score, verify_token
 
@@ -33,6 +35,20 @@ def _authenticate(
     return credentials.credentials
 
 
+# ── Schemas ──────────────────────────────────────────────────────────────
+
+
+class BatchRequest(BaseModel):
+    """Request body for batch scoring."""
+    applicants: list[ApplicantInput]
+
+
+class BatchResponse(BaseModel):
+    """Response body for batch scoring."""
+    results: list[ScoreResponse]
+    count: int
+
+
 # ── Routes ────────────────────────────────────────────────────────────────
 
 
@@ -49,3 +65,18 @@ def score_applicant(
 ) -> ScoreResponse:
     """Score a single applicant and return the decision + explanation."""
     return score(applicant)
+
+
+@app.post("/score/batch", response_model=BatchResponse)
+def score_batch(
+    batch: BatchRequest,
+    _token: str = Depends(_authenticate),
+) -> BatchResponse:
+    """Score multiple applicants in a single request."""
+    if len(batch.applicants) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Batch size limited to 100 applicants.",
+        )
+    results = [score(applicant) for applicant in batch.applicants]
+    return BatchResponse(results=results, count=len(results))

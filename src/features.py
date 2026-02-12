@@ -28,6 +28,9 @@ DELINQ_CAP = 15           # sentinel values 96/98 are errors
 REVOLVING_UTIL_CAP = 1.0  # utilization above 100 % is anomalous
 DEBT_RATIO_CAP_PCTILE = 0.99  # cap at 99th percentile (computed on training data)
 
+# Stores the debt-ratio cap computed during the most recent fit=True call
+last_debt_ratio_cap: float | None = None
+
 
 # ── Cleaning ─────────────────────────────────────────────────────────────
 
@@ -55,7 +58,10 @@ def clean_df(df: pd.DataFrame, *, fit: bool = True,
     # 1. Drop rows with age == 0 (invalid)
     df = df[df["age"] > 0].reset_index(drop=True)
 
-    # 2. Impute missing values
+    # 2. Missing-value indicator (before imputation)
+    df["MonthlyIncome_Missing"] = df["MonthlyIncome"].isna().astype("int8")
+
+    # 3. Impute missing values
     income_fill = df["MonthlyIncome"].median()
     if pd.isna(income_fill):
         income_fill = 0.0  # all values NaN (e.g. single-row inference)
@@ -71,10 +77,12 @@ def clean_df(df: pd.DataFrame, *, fit: bool = True,
     ].clip(upper=REVOLVING_UTIL_CAP)
 
     # 4. Cap outliers – debt ratio
+    global last_debt_ratio_cap
     if fit:
         debt_ratio_cap = float(
             df["DebtRatio"].quantile(DEBT_RATIO_CAP_PCTILE)
         )
+        last_debt_ratio_cap = debt_ratio_cap
     if debt_ratio_cap is None:
         raise ValueError("debt_ratio_cap must be provided when fit=False")
     df["DebtRatio"] = df["DebtRatio"].clip(upper=debt_ratio_cap)
