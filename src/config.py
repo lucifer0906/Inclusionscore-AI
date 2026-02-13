@@ -29,6 +29,15 @@ MODEL_NAME = "xgb_v1"
 
 # ── API / Security ───────────────────────────────────────────────────────
 API_TOKEN = os.environ.get("API_TOKEN", "changeme")
+
+# Decision thresholds for credit scoring.
+#
+# NOTE: The F1-optimal threshold computed on the validation set is ~0.42
+# (stored in models/xgb_v1_metadata.json → threshold_optimization).
+# Production thresholds are intentionally lower because in lending risk,
+# false negatives (missed defaults) are far costlier than false positives
+# (denied good borrowers).  The APPROVE threshold is further overridden
+# per age group when FAIRNESS_ENABLED=true (see models/fair_thresholds.json).
 SCORE_THRESHOLDS = {
     "APPROVE": 0.3,   # predicted default prob <= 0.3 → approve
     "REVIEW": 0.6,    # 0.3 < prob <= 0.6 → manual review

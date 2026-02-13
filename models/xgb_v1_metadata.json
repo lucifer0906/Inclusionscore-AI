@@ -1,17 +1,17 @@
 {
   "model_name": "xgb_v1",
   "dataset": "give_me_some_credit/cs-training.csv",
-  "date": "2026-02-12T21:46:20.587536+00:00",
+  "date": "2026-02-13T14:55:28.778678+00:00",
   "seed": 42,
-  "training_rows": 104999,
+  "training_rows": 195962,
   "validation_rows": 22500,
   "metrics": {
-    "auc_roc": 0.866149,
-    "precision": 0.246123,
-    "recall": 0.728059,
-    "f1": 0.367882,
-    "accuracy": 0.832756,
-    "brier_score": 0.120711
+    "auc_roc": 0.847992,
+    "precision": 0.419054,
+    "recall": 0.388963,
+    "f1": 0.403448,
+    "accuracy": 0.923111,
+    "brier_score": 0.062845
   },
   "params": {
     "objective": "binary:logistic",
@@ -49,19 +49,21 @@
     "reg_alpha": null,
     "reg_lambda": null,
     "sampling_method": null,
-    "scale_pos_weight": 11.442027460252229,
+    "scale_pos_weight": 1.0,
     "subsample": 0.9254424297748278,
     "tree_method": null,
     "validate_parameters": null,
     "verbosity": null
   },
   "preprocessing": {
-    "debt_ratio_cap": null
+    "debt_ratio_cap": 4979.079999999958,
+    "smote": true,
+    "smote_strategy": "auto"
   },
   "threshold_optimization": {
-    "optimal_threshold": 0.7803128361701965,
-    "f1_at_threshold": 0.4558730158725169,
-    "precision_at_threshold": 0.4362089914945322,
-    "recall_at_threshold": 0.4773936170212766
+    "optimal_threshold": 0.4234529435634613,
+    "f1_at_threshold": 0.42556818181769246,
+    "precision_at_threshold": 0.3715277777777778,
+    "recall_at_threshold": 0.49800531914893614
   }
 }

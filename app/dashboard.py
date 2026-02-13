@@ -158,3 +158,27 @@ else:
     - **Fairness-calibrated thresholds** ensuring equitable treatment across age groups
     - **Counterfactual suggestions** for rejected applicants showing how to improve
     """)
+
+    # Alternate data integration section
+    st.divider()
+    st.subheader("Alternate Data Integration")
+    st.markdown("""
+    InclusionScore AI integrates **5 alternate data tables** from the
+    Home Credit Default Risk dataset (30M+ transaction records) to
+    score applicants with little or no traditional credit history.
+
+    | Source | Signal | Example Features |
+    |--------|--------|-----------------|
+    | **Instalment Payments** (13.6M rows) | Payment timeliness & completion | Late-payment ratio, underpayment ratio |
+    | **Credit Card Balance** (3.8M rows) | Card utilisation patterns | Avg utilisation, ATM drawing frequency |
+    | **POS/Cash Balance** (10.0M rows) | Point-of-sale transactions | Completion ratio, days past due |
+    | **Previous Applications** (1.7M rows) | Loan application history | Approval ratio, previous credit amounts |
+    | **Bureau Records** (1.7M rows) | External credit bureau | Active credit ratio, overdue amounts |
+
+    **Impact:** Adding 32 alternate data features improves AUC-ROC by
+    **+0.019** (0.750 -> 0.769) on the Home Credit dataset,
+    demonstrating that transaction patterns and payment behaviour
+    provide meaningful creditworthiness signals for unbanked populations.
+
+    Run `python -m src.alternate_data` to reproduce this experiment.
+    """)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pandas as pd
+from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split
 
 from src.config import MODEL_DIR, MODEL_NAME, RANDOM_SEED
@@ -89,9 +90,29 @@ def prepare_data(
 
 def run_pipeline() -> None:
     """Execute the full training pipeline: data prep → train → evaluate → save."""
-    from src.features import last_debt_ratio_cap
+    import src.features as _feat_mod
 
     X_train, X_val, X_test, y_train, y_val, y_test = prepare_data()
+
+    # Read AFTER prepare_data() so clean_df(fit=True) has set the value.
+    # Using module attribute access (not `from ... import`) because
+    # `from` would bind the initial None before clean_df runs.
+    debt_ratio_cap = _feat_mod.last_debt_ratio_cap
+
+    # 0. Apply SMOTE to training data only (preserve val/test distributions)
+    print("\n-- SMOTE oversampling (training set only) --")
+    print(f"  Before: {len(X_train):,} rows  "
+          f"(class 0: {(y_train == 0).sum():,}, class 1: {(y_train == 1).sum():,})")
+    smote = SMOTE(random_state=RANDOM_SEED)
+    X_train_sm, y_train_sm = smote.fit_resample(X_train, y_train)
+    X_train_sm = pd.DataFrame(X_train_sm, columns=X_train.columns)
+    y_train_sm = pd.Series(y_train_sm, name=y_train.name)
+    print(f"  After:  {len(X_train_sm):,} rows  "
+          f"(class 0: {(y_train_sm == 0).sum():,}, class 1: {(y_train_sm == 1).sum():,})")
+
+    # Use SMOTE'd data for training, original data for evaluation
+    X_train = X_train_sm
+    y_train = y_train_sm
 
     # 1. Logistic Regression baseline
     print("\n-- Logistic Regression baseline --")
@@ -109,6 +130,16 @@ def run_pipeline() -> None:
     else:
         print(f"  Using default params (run src/tuning.py for optimization)")
         xgb_config = None
+
+    # SMOTE already balanced the classes (1:1), so the Optuna-tuned
+    # scale_pos_weight (~11.4, calibrated for the original ~1:14 ratio)
+    # would over-compensate.  Reset to 1.0 so both strategies contribute
+    # without interference: SMOTE handles data augmentation, while
+    # scale_pos_weight remains available for fine-tuning if needed.
+    if xgb_config and "scale_pos_weight" in xgb_config:
+        original_spw = xgb_config["scale_pos_weight"]
+        xgb_config = {**xgb_config, "scale_pos_weight": 1.0}
+        print(f"  Adjusted scale_pos_weight: {original_spw:.2f} -> 1.0 (post-SMOTE)")
 
     xgb_model, xgb_metrics = train_xgboost(
         X_train, y_train, X_val, y_val,
@@ -136,7 +167,9 @@ def run_pipeline() -> None:
         X_val_rows=len(X_val),
         extra_meta={
             "preprocessing": {
-                "debt_ratio_cap": last_debt_ratio_cap,
+                "debt_ratio_cap": debt_ratio_cap,
+                "smote": True,
+                "smote_strategy": "auto",
             },
             "threshold_optimization": thresh_info,
         },

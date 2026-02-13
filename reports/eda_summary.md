@@ -28,7 +28,7 @@
 - **No Default (0):** 139,974 (93.3%)
 - **Default (1):** 10,026 (6.7%)
 - **Imbalance ratio:** ~1:14
-- **Action:** Use SMOTE or class weights during training to address imbalance.
+- **Action:** Dual strategy implemented -- SMOTE (applied to training set only, before model fitting) + `scale_pos_weight` (Optuna-tuned to 11.44) in XGBoost loss function.
 
 ## Missing Values
 
