@@ -4,7 +4,7 @@ AI-powered alternate credit scoring for unbanked / under-banked individuals.
 
 > **HackerEarth Hack-o-Hire 2026 | Theme 4: AI-Powered Alternate Credit Scoring**
 
-[![CI](https://github.com/lucifer0906/Inclusionscore-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/lucifer0906/Inclusionscore-AI/actions/workflows/ci.yml)
+[![CI](https://github.com/lucifer0906/Inclusionscore-AI/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/lucifer0906/Inclusionscore-AI/actions/workflows/ci.yml)
 
 ---
 
