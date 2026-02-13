@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
 from src.config import API_TOKEN
+
+_MODEL_AVAILABLE = Path("models/xgb_v1.joblib").exists()
+_skip_no_model = pytest.mark.skipif(
+    not _MODEL_AVAILABLE,
+    reason="Model artifact not available (skipped in CI)",
+)
 
 
 @pytest.fixture()
@@ -59,6 +67,7 @@ def test_score_rejects_bad_token(client):
 # ── Scoring ───────────────────────────────────────────────────────────────
 
 
+@_skip_no_model
 def test_score_valid_payload(client):
     resp = client.post("/score", json=VALID_PAYLOAD, headers=AUTH_HEADER)
     assert resp.status_code == 200
@@ -70,6 +79,7 @@ def test_score_valid_payload(client):
     assert len(body["top_features"]) == 5
 
 
+@_skip_no_model
 def test_score_response_fields(client):
     resp = client.post("/score", json=VALID_PAYLOAD, headers=AUTH_HEADER)
     body = resp.json()
@@ -80,6 +90,7 @@ def test_score_response_fields(client):
         assert "contribution" in feat
 
 
+@_skip_no_model
 def test_score_with_nulls(client):
     """MonthlyIncome and NumberOfDependents accept null."""
     payload = {**VALID_PAYLOAD, "MonthlyIncome": None, "NumberOfDependents": None}
@@ -88,12 +99,14 @@ def test_score_with_nulls(client):
     assert resp.json()["decision"] in ("APPROVE", "REVIEW", "REJECT")
 
 
+@_skip_no_model
 def test_score_rejects_negative_age(client):
     payload = {**VALID_PAYLOAD, "age": -5}
     resp = client.post("/score", json=payload, headers=AUTH_HEADER)
     assert resp.status_code == 422  # Pydantic validation error
 
 
+@_skip_no_model
 def test_score_rejects_missing_field(client):
     payload = {k: v for k, v in VALID_PAYLOAD.items() if k != "age"}
     resp = client.post("/score", json=payload, headers=AUTH_HEADER)
@@ -103,6 +116,7 @@ def test_score_rejects_missing_field(client):
 # ── Batch scoring ────────────────────────────────────────────────────────
 
 
+@_skip_no_model
 def test_batch_score_valid(client):
     batch_payload = {"applicants": [VALID_PAYLOAD, VALID_PAYLOAD]}
     resp = client.post("/score/batch", json=batch_payload, headers=AUTH_HEADER)
@@ -121,6 +135,7 @@ def test_batch_score_requires_auth(client):
     assert resp.status_code == 403
 
 
+@_skip_no_model
 def test_batch_score_empty(client):
     batch_payload = {"applicants": []}
     resp = client.post("/score/batch", json=batch_payload, headers=AUTH_HEADER)

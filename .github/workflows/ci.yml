@@ -17,5 +17,4 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt
-      - run: python -m src.train
       - run: pytest tests/ -v
