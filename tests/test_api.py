@@ -52,7 +52,7 @@ def test_health(client):
 
 def test_score_requires_auth(client):
     resp = client.post("/score", json=VALID_PAYLOAD)
-    assert resp.status_code == 403  # missing credentials
+    assert resp.status_code == 401  # missing credentials
 
 
 def test_score_rejects_bad_token(client):
@@ -132,7 +132,7 @@ def test_batch_score_valid(client):
 def test_batch_score_requires_auth(client):
     batch_payload = {"applicants": [VALID_PAYLOAD]}
     resp = client.post("/score/batch", json=batch_payload)
-    assert resp.status_code == 403
+    assert resp.status_code == 401
 
 
 @_skip_no_model
