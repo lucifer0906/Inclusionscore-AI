@@ -254,31 +254,42 @@ def build_enriched_dataset() -> tuple[pd.DataFrame, pd.Series]:
 
 
 def run_alternate_data_demo() -> dict:
-    """Demonstrate that alternate data features improve default prediction.
+    """Train and save the enriched model with alternate data features.
 
     Trains two XGBoost models on the Home Credit dataset:
-    1. Application-only features (traditional)
-    2. Application + alternate data features (enriched)
+    1. Application-only features (traditional) — for comparison
+    2. Application + alternate data features (enriched) — saved for production
+
+    The enriched model is saved as ``models/xgb_enriched.joblib`` with full
+    metadata so it can be served by the ``/score/enriched`` API endpoint.
 
     Returns a dict with both models' AUC-ROC scores.
     """
     from sklearn.model_selection import train_test_split
+    from sklearn.metrics import (
+        roc_auc_score, f1_score, precision_score, recall_score,
+        accuracy_score, brier_score_loss, precision_recall_curve,
+    )
+    from imblearn.over_sampling import SMOTE
     from xgboost import XGBClassifier
-    from sklearn.metrics import roc_auc_score
 
-    from src.config import RANDOM_SEED
+    from src.config import MODEL_DIR, RANDOM_SEED
+    from src.models import save_model
 
     print("=" * 60)
-    print("  ALTERNATE DATA DEMO")
-    print("  Comparing traditional vs. enriched feature sets")
+    print("  ALTERNATE DATA — TRAIN & DEPLOY")
+    print("  Training enriched model with alternate data features")
     print("=" * 60)
 
     # Load enriched dataset
     X, y = build_enriched_dataset()
 
-    # Split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=RANDOM_SEED, stratify=y,
+    # Split into train / val / test (70/15/15)
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        X, y, test_size=0.30, random_state=RANDOM_SEED, stratify=y,
+    )
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_temp, y_temp, test_size=0.50, random_state=RANDOM_SEED, stratify=y_temp,
     )
 
     # Identify feature groups
@@ -293,33 +304,69 @@ def run_alternate_data_demo() -> dict:
     ]
     alt_cols = [c for c in X.columns if c not in app_cols]
 
-    # Model 1: Application-only
-    print("\n-- Model 1: Application features only --")
+    # ── Model 1: Application-only (comparison baseline) ──
+    print("\n-- Model 1: Application features only (baseline) --")
     xgb1 = XGBClassifier(
         n_estimators=300, max_depth=4, learning_rate=0.05,
         eval_metric="auc", random_state=RANDOM_SEED, n_jobs=-1,
     )
     xgb1.fit(X_train[app_cols], y_train,
-             eval_set=[(X_test[app_cols], y_test)], verbose=0)
+             eval_set=[(X_val[app_cols], y_val)], verbose=0)
     auc_app = roc_auc_score(y_test, xgb1.predict_proba(X_test[app_cols])[:, 1])
     print(f"  AUC-ROC (application only): {auc_app:.4f}")
 
-    # Model 2: Application + alternate data
-    print("\n-- Model 2: Application + alternate data features --")
+    # ── Model 2: Application + alternate data (production enriched model) ──
+    print("\n-- Model 2: Application + alternate data (enriched) --")
+
+    # SMOTE on training set
+    print("  Applying SMOTE to training data...")
+    smote = SMOTE(random_state=RANDOM_SEED)
+    X_train_sm, y_train_sm = smote.fit_resample(X_train, y_train)
+    X_train_sm = pd.DataFrame(X_train_sm, columns=X_train.columns)
+    y_train_sm = pd.Series(y_train_sm, name=y_train.name)
+    print(f"  SMOTE: {len(X_train):,} -> {len(X_train_sm):,} rows")
+
     xgb2 = XGBClassifier(
         n_estimators=300, max_depth=4, learning_rate=0.05,
         eval_metric="auc", random_state=RANDOM_SEED, n_jobs=-1,
     )
-    xgb2.fit(X_train, y_train,
-             eval_set=[(X_test, y_test)], verbose=0)
-    auc_full = roc_auc_score(y_test, xgb2.predict_proba(X_test)[:, 1])
+    xgb2.fit(X_train_sm, y_train_sm,
+             eval_set=[(X_val, y_val)], verbose=50)
+
+    # Evaluate on test set
+    y_proba = xgb2.predict_proba(X_test)[:, 1]
+    y_pred = xgb2.predict(X_test)
+    auc_full = roc_auc_score(y_test, y_proba)
     print(f"  AUC-ROC (app + alternate):  {auc_full:.4f}")
 
     improvement = auc_full - auc_app
     print(f"\n  Improvement from alternate data: +{improvement:.4f} AUC")
     print(f"  Alternate features used: {len(alt_cols)}")
 
-    # Top alternate data features by importance
+    # ── Optimal threshold (F1-maximizing) ──
+    precisions, recalls, thresholds = precision_recall_curve(y_test, y_proba)
+    f1s = 2 * (precisions[:-1] * recalls[:-1]) / (precisions[:-1] + recalls[:-1] + 1e-12)
+    best_idx = int(np.argmax(f1s))
+    thresh_info = {
+        "optimal_threshold": float(thresholds[best_idx]),
+        "f1_at_threshold": float(f1s[best_idx]),
+        "precision_at_threshold": float(precisions[best_idx]),
+        "recall_at_threshold": float(recalls[best_idx]),
+    }
+    print(f"  Optimal threshold: {thresh_info['optimal_threshold']:.4f}")
+    print(f"  F1 at threshold:   {thresh_info['f1_at_threshold']:.4f}")
+
+    # ── Test metrics ──
+    test_metrics = {
+        "auc_roc": auc_full,
+        "precision": float(precision_score(y_test, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_test, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_test, y_pred, zero_division=0)),
+        "accuracy": float(accuracy_score(y_test, y_pred)),
+        "brier_score": float(brier_score_loss(y_test, y_proba)),
+    }
+
+    # ── Top alternate data features ──
     importances = pd.Series(
         xgb2.feature_importances_, index=X.columns,
     ).sort_values(ascending=False)
@@ -327,6 +374,34 @@ def run_alternate_data_demo() -> dict:
     print("\n  Top 10 alternate data features by importance:")
     for feat, imp in alt_importances.items():
         print(f"    {feat:35s}  {imp:.4f}")
+
+    # ── Save enriched model ──
+    print("\n-- Saving enriched model --")
+    path = save_model(
+        xgb2,
+        test_metrics,
+        name="xgb_enriched",
+        output_dir=MODEL_DIR,
+        X_train_rows=len(X_train_sm),
+        X_val_rows=len(X_val),
+        extra_meta={
+            "dataset": "home-credit-default-risk",
+            "preprocessing": {
+                "smote": True,
+                "smote_strategy": "auto",
+            },
+            "threshold_optimization": thresh_info,
+            "feature_columns": list(X.columns),
+            "app_feature_columns": app_cols,
+            "alt_feature_columns": alt_cols,
+            "comparison": {
+                "auc_application_only": round(auc_app, 4),
+                "auc_with_alternate_data": round(auc_full, 4),
+                "improvement": round(improvement, 4),
+            },
+        },
+    )
+    print(f"  Enriched model saved -> {path}")
 
     results = {
         "auc_application_only": round(auc_app, 4),

@@ -96,6 +96,27 @@ class TestCleanDf:
         assert cleaned["MonthlyIncome_Missing"].dtype == np.int8
         assert cleaned["MonthlyIncome_Missing"].isin([0, 1]).all()
 
+    def test_inference_imputation_uses_explicit_fill(self):
+        """Single-row inference must use provided fill values, not row median."""
+        row = pd.DataFrame([{
+            TARGET_COL: 0,
+            "RevolvingUtilizationOfUnsecuredLines": 0.5,
+            "age": 35,
+            "NumberOfTime30-59DaysPastDueNotWorse": 0,
+            "DebtRatio": 0.3,
+            "MonthlyIncome": None,
+            "NumberOfOpenCreditLinesAndLoans": 5,
+            "NumberOfTimes90DaysLate": 0,
+            "NumberRealEstateLoansOrLines": 1,
+            "NumberOfTime60-89DaysPastDueNotWorse": 0,
+            "NumberOfDependents": None,
+        }])
+        cleaned = clean_df(row, fit=False, debt_ratio_cap=5000.0,
+                           income_fill=5400.0, dep_fill=0.0)
+        assert cleaned["MonthlyIncome"].iloc[0] == 5400.0
+        assert cleaned["NumberOfDependents"].iloc[0] == 0.0
+        assert cleaned["MonthlyIncome_Missing"].iloc[0] == 1
+
 
 # ── create_features tests ────────────────────────────────────────────────
 

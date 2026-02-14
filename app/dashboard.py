@@ -23,6 +23,13 @@ import numpy as np
 from src.api import ApplicantInput, score as score_applicant
 from src.counterfactual import generate_counterfactuals
 
+# Try to import enriched model scoring (optional — requires trained enriched model)
+try:
+    from src.api_enriched import EnrichedApplicantInput, score_enriched
+    _ENRICHED_AVAILABLE = Path(PROJECT_ROOT / "models" / "xgb_enriched.joblib").exists()
+except ImportError:
+    _ENRICHED_AVAILABLE = False
+
 st.set_page_config(
     page_title="InclusionScore AI",
     page_icon="🏦",
@@ -182,3 +189,95 @@ else:
 
     Run `python -m src.alternate_data` to reproduce this experiment.
     """)
+
+
+# ── Enriched Model Scoring Tab ──────────────────────────────────────────
+st.divider()
+if _ENRICHED_AVAILABLE:
+    st.subheader("Enriched Model Scoring (Home Credit + Alternate Data)")
+    st.markdown(
+        "Score applicants using the **enriched model** trained on "
+        "application features plus 32 alternate data features from "
+        "5 Home Credit transaction tables."
+    )
+
+    with st.expander("Enriched Model Input Form", expanded=False):
+        ecol1, ecol2 = st.columns(2)
+        with ecol1:
+            st.markdown("**Application Features**")
+            e_income = st.number_input("Total Income", value=270000.0, key="e_income")
+            e_credit = st.number_input("Credit Amount", value=1293502.5, key="e_credit")
+            e_annuity = st.number_input("Annuity", value=35698.5, key="e_annuity")
+            e_goods = st.number_input("Goods Price", value=1129500.0, key="e_goods")
+            e_birth = st.number_input("Days Birth (negative)", value=-12005, key="e_birth")
+            e_employed = st.number_input("Days Employed (negative)", value=-4542, key="e_employed")
+            e_ext1 = st.number_input("External Source 1", value=0.5, key="e_ext1", format="%.3f")
+            e_ext2 = st.number_input("External Source 2", value=0.6, key="e_ext2", format="%.3f")
+            e_ext3 = st.number_input("External Source 3", value=0.55, key="e_ext3", format="%.3f")
+
+        with ecol2:
+            st.markdown("**Alternate Data Features**")
+            e_inst_late = st.number_input("Late Payment Ratio", value=0.1, key="e_inst_late", format="%.3f")
+            e_inst_pay_ratio = st.number_input("Avg Payment Ratio", value=0.98, key="e_inst_pay", format="%.3f")
+            e_inst_underpaid = st.number_input("Underpaid Ratio", value=0.05, key="e_inst_under", format="%.3f")
+            e_cc_util = st.number_input("Credit Card Utilization", value=0.3, key="e_cc_util", format="%.3f")
+            e_bureau_count = st.number_input("Bureau Record Count", value=3, key="e_bureau_ct")
+            e_bureau_overdue = st.number_input("Bureau Overdue Ratio", value=0.0, key="e_bureau_od", format="%.3f")
+            e_prev_count = st.number_input("Previous App Count", value=5, key="e_prev_ct")
+            e_prev_refused = st.number_input("Previous Refused Ratio", value=0.1, key="e_prev_ref", format="%.3f")
+            e_pos_dpd = st.number_input("POS Max Days Past Due", value=0, key="e_pos_dpd")
+
+        enriched_submit = st.button("Score with Enriched Model", type="primary", key="enrich_btn")
+
+    if enriched_submit:
+        enriched_input = EnrichedApplicantInput(
+            AMT_INCOME_TOTAL=e_income,
+            AMT_CREDIT=e_credit,
+            AMT_ANNUITY=e_annuity,
+            AMT_GOODS_PRICE=e_goods,
+            DAYS_BIRTH=e_birth,
+            DAYS_EMPLOYED=e_employed,
+            DAYS_REGISTRATION=-12563,
+            DAYS_ID_PUBLISH=-4260,
+            EXT_SOURCE_1=e_ext1,
+            EXT_SOURCE_2=e_ext2,
+            EXT_SOURCE_3=e_ext3,
+            CNT_CHILDREN=0,
+            CNT_FAM_MEMBERS=2,
+            REGION_RATING_CLIENT=2,
+            DAYS_LAST_PHONE_CHANGE=-1134,
+            inst_late_ratio=e_inst_late,
+            inst_avg_payment_ratio=e_inst_pay_ratio,
+            inst_underpaid_ratio=e_inst_underpaid,
+            cc_avg_utilization=e_cc_util,
+            bureau_count=e_bureau_count,
+            bureau_overdue_ratio=e_bureau_overdue,
+            prev_app_count=e_prev_count,
+            prev_refused_ratio=e_prev_refused,
+            pos_max_dpd=e_pos_dpd,
+        )
+
+        with st.spinner("Running enriched model..."):
+            e_result = score_enriched(enriched_input)
+
+        ecol_a, ecol_b, ecol_c = st.columns(3)
+        with ecol_a:
+            st.metric("Default Probability", f"{e_result.score:.4f}")
+        with ecol_b:
+            e_icon_map = {"APPROVE": "✅", "REVIEW": "⚠️", "REJECT": "❌"}
+            st.metric("Decision", f"{e_icon_map.get(e_result.decision, '')} {e_result.decision}")
+        with ecol_c:
+            st.metric("Model Version", e_result.model_version)
+
+        e_contrib_data = pd.DataFrame([
+            {
+                "Feature": fc.feature,
+                "Value": round(fc.value, 4),
+                "Contribution": round(fc.contribution, 4),
+            }
+            for fc in e_result.top_features
+        ])
+        if not e_contrib_data.empty:
+            chart_data = e_contrib_data.set_index("Feature")["Contribution"].sort_values()
+            st.bar_chart(chart_data, horizontal=True)
+            st.dataframe(e_contrib_data, use_container_width=True, hide_index=True)

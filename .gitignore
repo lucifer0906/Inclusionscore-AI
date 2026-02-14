@@ -30,6 +30,5 @@ Thumbs.db
 
 # Temp
 *.tmp
-tmpclaude-*/
-tmpclaude-*-cwd
+temp_log.txt
 nul

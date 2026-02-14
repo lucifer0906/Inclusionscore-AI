@@ -28,14 +28,21 @@ DELINQ_CAP = 15           # sentinel values 96/98 are errors
 REVOLVING_UTIL_CAP = 1.0  # utilization above 100 % is anomalous
 DEBT_RATIO_CAP_PCTILE = 0.99  # cap at 99th percentile (computed on training data)
 
-# Stores the debt-ratio cap computed during the most recent fit=True call
+# Stores preprocessing values computed during the most recent fit=True call.
+# These are only used by train.py to persist values into model metadata.
+# The API path (fit=False) always receives explicit values from metadata,
+# so these globals are never read in a multi-worker serving context.
 last_debt_ratio_cap: float | None = None
+last_income_fill: float | None = None
+last_dep_fill: float | None = None
 
 
 # ── Cleaning ─────────────────────────────────────────────────────────────
 
 def clean_df(df: pd.DataFrame, *, fit: bool = True,
-             debt_ratio_cap: float | None = None) -> pd.DataFrame:
+             debt_ratio_cap: float | None = None,
+             income_fill: float | None = None,
+             dep_fill: float | None = None) -> pd.DataFrame:
     """Clean the raw dataframe according to the EDA plan.
 
     Parameters
@@ -43,10 +50,14 @@ def clean_df(df: pd.DataFrame, *, fit: bool = True,
     df : pd.DataFrame
         Raw dataframe (must contain all original columns).
     fit : bool
-        If ``True`` (training), compute the debt-ratio cap from data.
-        If ``False`` (inference), *debt_ratio_cap* must be provided.
+        If ``True`` (training), compute imputation values from data.
+        If ``False`` (inference), pre-computed values must be provided.
     debt_ratio_cap : float | None
         Pre-computed cap for ``DebtRatio`` (used when ``fit=False``).
+    income_fill : float | None
+        Pre-computed median for ``MonthlyIncome`` imputation (``fit=False``).
+    dep_fill : float | None
+        Pre-computed mode for ``NumberOfDependents`` imputation (``fit=False``).
 
     Returns
     -------
@@ -62,13 +73,23 @@ def clean_df(df: pd.DataFrame, *, fit: bool = True,
     df["MonthlyIncome_Missing"] = df["MonthlyIncome"].isna().astype("int8")
 
     # 3. Impute missing values
-    income_fill = df["MonthlyIncome"].median()
-    if pd.isna(income_fill):
-        income_fill = 0.0  # all values NaN (e.g. single-row inference)
-    df["MonthlyIncome"] = df["MonthlyIncome"].fillna(income_fill)
+    global last_income_fill, last_dep_fill
+    if fit:
+        income_fill = float(df["MonthlyIncome"].median())
+        if pd.isna(income_fill):
+            income_fill = 0.0
+        last_income_fill = income_fill
 
-    dep_mode = df["NumberOfDependents"].mode()
-    dep_fill = dep_mode.iloc[0] if len(dep_mode) > 0 else 0.0
+        dep_mode = df["NumberOfDependents"].mode()
+        dep_fill = float(dep_mode.iloc[0]) if len(dep_mode) > 0 else 0.0
+        last_dep_fill = dep_fill
+    else:
+        if income_fill is None:
+            raise ValueError("income_fill must be provided when fit=False")
+        if dep_fill is None:
+            raise ValueError("dep_fill must be provided when fit=False")
+
+    df["MonthlyIncome"] = df["MonthlyIncome"].fillna(income_fill)
     df["NumberOfDependents"] = df["NumberOfDependents"].fillna(dep_fill)
 
     # 3. Cap outliers – revolving utilization

@@ -23,7 +23,7 @@ Traditional credit scoring relies on lengthy credit histories, excluding ~1.4 bi
 - **Streamlit dashboard** for interactive scoring, SHAP visualization, and counterfactual display
 - **Docker-ready** for production deployment
 - **Alternate data integration** -- 32 features engineered from 5 Home Credit transaction tables (30M+ records) with demonstrated +0.019 AUC improvement
-- **42 automated tests** covering features, model, fairness, and API (incl. batch)
+- **48 automated tests** covering features, model, fairness, and API (incl. batch + enriched)
 
 ## Architecture
 
@@ -49,7 +49,7 @@ score + SHAP         -- probability, decision, per-applicant contributions
 Fair Thresholds      -- age-group-specific approval thresholds (DI >= 0.80)
     |
     v
-FastAPI              -- /score, /score/batch, /health
+FastAPI              -- /score, /score/batch, /score/enriched, /health
     |
     v
 Streamlit Dashboard  -- interactive form + SHAP chart + counterfactuals
@@ -67,25 +67,26 @@ InclusionScore-AI/
 |   |-- explainability.py   # SHAP global and local explanations
 |   |-- fairness.py         # Disparate impact, demographic parity, threshold calibration
 |   |-- api.py              # Scoring logic, Pydantic schemas, input preparation
+|   |-- api_enriched.py     # Enriched model scoring (Home Credit + alternate data)
 |   |-- train.py            # Training orchestration (data -> train -> evaluate -> save)
 |   |-- tuning.py           # Optuna hyperparameter optimization (50 trials, 5-fold CV)
 |   |-- counterfactual.py   # Counterfactual explanations for denied applicants
 |   |-- alternate_data.py   # Alternate data feature engineering (Home Credit)
 |   `-- utils.py            # General utilities
 |-- api/
-|   `-- main.py             # FastAPI app with /health, /score, /score/batch
+|   `-- main.py             # FastAPI app with /health, /score, /score/batch, /score/enriched
 |-- app/
 |   `-- dashboard.py        # Streamlit interactive dashboard
 |-- tests/
-|   |-- test_features.py    # 13 tests for cleaning + feature engineering
+|   |-- test_features.py    # 14 tests for cleaning + feature engineering
 |   |-- test_model.py       # 8 tests for training, save/load, artifact validation
 |   |-- test_fairness.py    # 10 tests for fairness auditing + calibration
-|   `-- test_api.py         # 11 tests for API endpoints, auth, batch scoring
+|   `-- test_api.py         # 16 tests for API endpoints, auth, batch + enriched scoring
 |-- notebooks/
 |   |-- 00_quick_start.ipynb # Unified end-to-end pipeline (hackathon submission)
 |   |-- 01_EDA.ipynb         # Exploratory data analysis
-|   |-- 03_modeling.ipynb    # Model training and evaluation
-|   `-- 04_explain_fairness.ipynb  # Explainability and fairness
+|   |-- 02_modeling.ipynb    # Model training and evaluation
+|   `-- 03_explain_fairness.ipynb  # Explainability and fairness
 |-- reports/
 |   |-- eda_summary.md      # EDA findings and cleaning plan
 |   |-- fairness_report.md  # Fairness audit results (pre + post mitigation)
@@ -95,6 +96,8 @@ InclusionScore-AI/
 |-- models/
 |   |-- xgb_v1.joblib       # Trained XGBoost model (gitignored)
 |   |-- xgb_v1_metadata.json# Model metadata (metrics, params, preprocessing, threshold)
+|   |-- xgb_enriched.joblib # Enriched model with alternate data (gitignored)
+|   |-- xgb_enriched_metadata.json # Enriched model metadata
 |   |-- best_params.json    # Optuna-tuned hyperparameters
 |   `-- fair_thresholds.json# Per-age-group calibrated approval thresholds
 |-- scripts/
@@ -148,7 +151,7 @@ Results are saved to `models/best_params.json` and automatically used by the tra
 pytest tests/ -v
 ```
 
-42 tests covering feature engineering, model training, fairness calibration, and API endpoints (incl. batch scoring).
+48 tests covering feature engineering, model training, fairness calibration, and API endpoints (incl. batch + enriched scoring).
 
 ### Start the API
 
@@ -355,6 +358,7 @@ Score a single applicant. Requires `Authorization: Bearer <token>` header.
   "model_version": "xgb_v1",
   "score": 0.1234,
   "decision": "APPROVE",
+  "contribution_unit": "log-odds (positive = increases default risk)",
   "top_features": [
     {"feature": "RevolvingUtilizationOfUnsecuredLines", "value": 0.35, "contribution": 0.0821},
     {"feature": "TotalDelinquencies", "value": 1.0, "contribution": 0.0315}
@@ -384,6 +388,54 @@ Score up to 100 applicants in a single request. Requires `Authorization: Bearer 
 }
 ```
 
+### `POST /score/enriched`
+
+Score an applicant using the enriched model (application + alternate data features from Home Credit). Requires `Authorization: Bearer <token>` header.
+
+All 32 alternate data fields are optional -- when omitted, they default to 0.0 (matching how the model was trained for applicants without alternate data records).
+
+**Request body:**
+```json
+{
+  "AMT_INCOME_TOTAL": 270000.0,
+  "AMT_CREDIT": 1293502.5,
+  "AMT_ANNUITY": 35698.5,
+  "AMT_GOODS_PRICE": 1129500.0,
+  "DAYS_BIRTH": -12005,
+  "DAYS_EMPLOYED": -4542,
+  "DAYS_REGISTRATION": -12563,
+  "DAYS_ID_PUBLISH": -4260,
+  "EXT_SOURCE_1": 0.5,
+  "EXT_SOURCE_2": 0.6,
+  "EXT_SOURCE_3": 0.55,
+  "CNT_CHILDREN": 0,
+  "CNT_FAM_MEMBERS": 2,
+  "REGION_RATING_CLIENT": 2,
+  "DAYS_LAST_PHONE_CHANGE": -1134,
+  "OBS_30_CNT_SOCIAL_CIRCLE": 2,
+  "DEF_30_CNT_SOCIAL_CIRCLE": 0,
+  "inst_late_ratio": 0.1,
+  "inst_avg_payment_ratio": 0.98,
+  "cc_avg_utilization": 0.3,
+  "bureau_count": 3,
+  "bureau_overdue_ratio": 0.0
+}
+```
+
+**Response:**
+```json
+{
+  "model_version": "xgb_enriched",
+  "score": 0.0892,
+  "decision": "APPROVE",
+  "contribution_unit": "log-odds (positive = increases default risk)",
+  "top_features": [
+    {"feature": "EXT_SOURCE_2", "value": 0.6, "contribution": -0.312},
+    {"feature": "inst_late_ratio", "value": 0.1, "contribution": 0.087}
+  ]
+}
+```
+
 ## Tech Stack
 
 | Component | Technology |
@@ -400,7 +452,7 @@ Score up to 100 applicants in a single request. Requires `Authorization: Bearer 
 | Validation | Pydantic 2.0 |
 | Data | pandas, numpy, pyarrow |
 | Visualization | matplotlib, seaborn |
-| Testing | pytest (42 tests) |
+| Testing | pytest (48 tests) |
 | Containerization | Docker |
 | CI | GitHub Actions |
 
@@ -441,19 +493,20 @@ Top alternate data features by importance:
 
 | Rank | Feature | Source | Signal |
 |------|---------|--------|--------|
-| 1 | `cc_avg_utilization` | Credit Card | How much of available credit is used |
-| 2 | `prev_refused_ratio` | Previous Apps | Fraction of prior loan applications refused |
-| 3 | `inst_late_ratio` | Instalments | Fraction of instalments paid late |
-| 4 | `cc_avg_atm_drawings` | Credit Card | Average ATM cash withdrawal amount |
-| 5 | `pos_months` | POS/Cash | Length of point-of-sale transaction history |
+| 1 | `inst_underpaid_ratio` | Instalments | Fraction of instalments underpaid |
+| 2 | `inst_max_delay` | Instalments | Maximum payment delay in days |
+| 3 | `prev_refused_ratio` | Previous Apps | Fraction of prior loan applications refused |
+| 4 | `inst_late_ratio` | Instalments | Fraction of instalments paid late |
+| 5 | `prev_approved_ratio` | Previous Apps | Fraction of prior loan applications approved |
 
-### Running the Demo
+### Running the Alternate Data Pipeline
 
 ```bash
+# Train the enriched model (saves to models/xgb_enriched.joblib)
 python -m src.alternate_data
 ```
 
-This loads all five alternate data tables, engineers 32 features, and trains two XGBoost models to compare traditional vs. enriched scoring.
+This loads all five alternate data tables, engineers 32 features, trains two XGBoost models (application-only baseline vs. enriched), and saves the enriched model for production serving via the `/score/enriched` endpoint.
 
 ### Production Integration Path
 

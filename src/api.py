@@ -21,9 +21,11 @@ from src.fairness import AGE_BINS, load_fair_thresholds
 from src.features import clean_df, create_features
 from src.models import load_model, load_model_metadata
 
-# Pre-computed fallback from training data (99th percentile of DebtRatio).
-# Overridden at runtime if metadata contains preprocessing.debt_ratio_cap.
+# Pre-computed fallbacks from training data.
+# Overridden at runtime if metadata contains preprocessing values.
 _DEBT_RATIO_CAP = 4979.08
+_INCOME_FILL = 5400.0
+_DEP_FILL = 0.0
 
 # Lazy-loaded model and SHAP explainer (initialised on first request)
 _model = None
@@ -33,7 +35,8 @@ _fair_thresholds: dict[str, float] = {}
 
 def _get_model():
     """Return the cached model, loading it on first call."""
-    global _model, _explainer, _fair_thresholds, _DEBT_RATIO_CAP
+    global _model, _explainer, _fair_thresholds
+    global _DEBT_RATIO_CAP, _INCOME_FILL, _DEP_FILL
     if _model is None:
         model_path = MODEL_DIR / f"{MODEL_NAME}.joblib"
         _model = load_model(model_path)
@@ -45,6 +48,10 @@ def _get_model():
         preproc = meta.get("preprocessing", {})
         if "debt_ratio_cap" in preproc and preproc["debt_ratio_cap"] is not None:
             _DEBT_RATIO_CAP = preproc["debt_ratio_cap"]
+        if "income_fill" in preproc and preproc["income_fill"] is not None:
+            _INCOME_FILL = preproc["income_fill"]
+        if "dep_fill" in preproc and preproc["dep_fill"] is not None:
+            _DEP_FILL = preproc["dep_fill"]
     return _model
 
 
@@ -109,6 +116,7 @@ class ScoreResponse(BaseModel):
     score: float
     decision: str
     top_features: list[FeatureContribution]
+    contribution_unit: str = "log-odds (positive = increases default risk)"
 
 
 # ── Core scoring logic ───────────────────────────────────────────────────
@@ -159,7 +167,8 @@ def prepare_input(applicant: ApplicantInput) -> pd.DataFrame:
         "NumberOfDependents": applicant.NumberOfDependents,
     }])
 
-    cleaned = clean_df(raw, fit=False, debt_ratio_cap=_DEBT_RATIO_CAP)
+    cleaned = clean_df(raw, fit=False, debt_ratio_cap=_DEBT_RATIO_CAP,
+                       income_fill=_INCOME_FILL, dep_fill=_DEP_FILL)
     featured = create_features(cleaned)
     featured = featured.drop(columns=["SeriousDlqin2yrs"], errors="ignore")
 

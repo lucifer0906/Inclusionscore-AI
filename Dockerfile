@@ -14,8 +14,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code and model artifacts
 COPY src/ src/
 COPY api/ api/
-COPY models/ models/
-COPY data/processed/ data/processed/
+COPY app/ app/
+
+# Copy model config files (JSON metadata / thresholds).
+# The model binary (.joblib) is mounted at runtime via docker-compose volume.
+COPY models/*.json models/
 
 # Expose port
 EXPOSE 8000

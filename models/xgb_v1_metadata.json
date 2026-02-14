@@ -1,7 +1,7 @@
 {
   "model_name": "xgb_v1",
   "dataset": "give_me_some_credit/cs-training.csv",
-  "date": "2026-02-13T14:55:28.778678+00:00",
+  "date": "2026-02-14T06:47:00.902742+00:00",
   "seed": 42,
   "training_rows": 195962,
   "validation_rows": 22500,
@@ -57,6 +57,8 @@
   },
   "preprocessing": {
     "debt_ratio_cap": 4979.079999999958,
+    "income_fill": 5400.0,
+    "dep_fill": 0.0,
     "smote": true,
     "smote_strategy": "auto"
   },

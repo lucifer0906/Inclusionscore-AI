@@ -98,6 +98,8 @@ def run_pipeline() -> None:
     # Using module attribute access (not `from ... import`) because
     # `from` would bind the initial None before clean_df runs.
     debt_ratio_cap = _feat_mod.last_debt_ratio_cap
+    income_fill = _feat_mod.last_income_fill
+    dep_fill = _feat_mod.last_dep_fill
 
     # 0. Apply SMOTE to training data only (preserve val/test distributions)
     print("\n-- SMOTE oversampling (training set only) --")
@@ -168,6 +170,8 @@ def run_pipeline() -> None:
         extra_meta={
             "preprocessing": {
                 "debt_ratio_cap": debt_ratio_cap,
+                "income_fill": income_fill,
+                "dep_fill": dep_fill,
                 "smote": True,
                 "smote_strategy": "auto",
             },

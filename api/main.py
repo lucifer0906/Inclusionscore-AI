@@ -1,9 +1,10 @@
 """FastAPI application entrypoint.
 
 Exposes:
-- GET  /health       -- liveness check (no auth)
-- POST /score        -- score a single applicant (bearer-token auth)
-- POST /score/batch  -- score multiple applicants (bearer-token auth)
+- GET  /health          -- liveness check (no auth)
+- POST /score           -- score a single applicant (bearer-token auth)
+- POST /score/batch     -- score multiple applicants (bearer-token auth)
+- POST /score/enriched  -- score with enriched model (bearer-token auth)
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from src.api import ApplicantInput, ScoreResponse, score, verify_token
+from src.api_enriched import EnrichedApplicantInput, score_enriched
 
 app = FastAPI(
     title="InclusionScore AI",
@@ -20,13 +22,18 @@ app = FastAPI(
     version="0.1.0",
 )
 
-_bearer_scheme = HTTPBearer()
+_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def _authenticate(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> str:
     """Validate the bearer token and return it."""
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization credentials.",
+        )
     if not verify_token(credentials.credentials):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -80,3 +87,12 @@ def score_batch(
         )
     results = [score(applicant) for applicant in batch.applicants]
     return BatchResponse(results=results, count=len(results))
+
+
+@app.post("/score/enriched", response_model=ScoreResponse)
+def score_enriched_applicant(
+    applicant: EnrichedApplicantInput,
+    _token: str = Depends(_authenticate),
+) -> ScoreResponse:
+    """Score an applicant using the enriched model (application + alternate data)."""
+    return score_enriched(applicant)
