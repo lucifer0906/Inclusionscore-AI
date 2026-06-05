@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.config import RANDOM_SEED
+from src.config import MODEL_DIR, RANDOM_SEED
 from src.models import (
     evaluate,
     load_model,
@@ -110,7 +110,7 @@ class TestSaveLoadModel:
 class TestRealModelArtifact:
     @pytest.fixture
     def model_path(self):
-        p = Path("models/xgb_v1.joblib")
+        p = MODEL_DIR / "xgb_v1.joblib"
         if not p.exists():
             pytest.skip("Model artifact not found (run training first)")
         return p

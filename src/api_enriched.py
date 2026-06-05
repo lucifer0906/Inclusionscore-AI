@@ -166,9 +166,13 @@ def score_enriched(applicant: EnrichedApplicantInput) -> ScoreResponse:
     proba = float(model.predict_proba(X)[0, 1])
     decision = _make_enriched_decision(proba)
 
-    # Per-applicant SHAP values for explainability
+    # Per-applicant SHAP values for explainability.
+    # SHAP version compat: handle both list-of-arrays and single 2D array.
     shap_values = explainer.shap_values(X)
-    contributions = shap_values[0]
+    if isinstance(shap_values, list):
+        contributions = shap_values[1][0]  # class-1, first row
+    else:
+        contributions = shap_values[0]  # 2D array, first row
     feature_names = list(X.columns)
     values = X.iloc[0].values
 

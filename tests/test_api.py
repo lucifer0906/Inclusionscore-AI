@@ -8,15 +8,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
-from src.config import API_TOKEN
+from src.config import API_TOKEN, MODEL_DIR
 
-_MODEL_AVAILABLE = Path("models/xgb_v1.joblib").exists()
+_MODEL_AVAILABLE = (MODEL_DIR / "xgb_v1.joblib").exists()
 _skip_no_model = pytest.mark.skipif(
     not _MODEL_AVAILABLE,
     reason="Model artifact not available (skipped in CI)",
 )
 
-_ENRICHED_MODEL_AVAILABLE = Path("models/xgb_enriched.joblib").exists()
+_ENRICHED_MODEL_AVAILABLE = (MODEL_DIR / "xgb_enriched.joblib").exists()
 _skip_no_enriched_model = pytest.mark.skipif(
     not _ENRICHED_MODEL_AVAILABLE,
     reason="Enriched model artifact not available (skipped in CI)",

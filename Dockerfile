@@ -18,7 +18,8 @@ COPY app/ app/
 
 # Copy model config files (JSON metadata / thresholds).
 # The model binary (.joblib) is mounted at runtime via docker-compose volume.
-COPY models/*.json models/
+RUN mkdir -p models
+COPY models/ models/
 
 # Expose port
 EXPOSE 8000

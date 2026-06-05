@@ -5,8 +5,11 @@ All project-wide constants, paths, and hyperparameters live here so that
 every module imports a single source of truth.
 """
 
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # ── Paths ────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -28,7 +31,14 @@ PRIMARY_TEST_FILE = "cs-test.csv"
 MODEL_NAME = "xgb_v1"
 
 # ── API / Security ───────────────────────────────────────────────────────
-API_TOKEN = os.environ.get("API_TOKEN", "changeme")
+_DEFAULT_TOKEN = "testtoken"
+API_TOKEN = os.environ.get("API_TOKEN", _DEFAULT_TOKEN)
+if API_TOKEN == _DEFAULT_TOKEN:
+    logger.warning(
+        "API_TOKEN is set to the default value '%s'. "
+        "Set the API_TOKEN environment variable to a strong secret before deploying.",
+        _DEFAULT_TOKEN,
+    )
 
 # Decision thresholds for credit scoring.
 #

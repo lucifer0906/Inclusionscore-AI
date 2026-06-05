@@ -1,7 +1,7 @@
 {
   "model_name": "xgb_v1",
   "dataset": "give_me_some_credit/cs-training.csv",
-  "date": "2026-02-14T06:47:00.902742+00:00",
+  "date": "2026-02-18T13:27:48.606289+00:00",
   "seed": 42,
   "training_rows": 195962,
   "validation_rows": 22500,

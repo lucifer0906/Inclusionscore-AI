@@ -182,7 +182,7 @@ def train_xgboost(
     """
     params = {**_DEFAULT_XGB_PARAMS, **(config or {})}
 
-    xgb = XGBClassifier(**params)
+    xgb = XGBClassifier(**params, early_stopping_rounds=50)
     xgb.fit(
         X_train, y_train,
         eval_set=[(X_val, y_val)],

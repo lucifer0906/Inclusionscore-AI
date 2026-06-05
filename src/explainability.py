@@ -82,9 +82,15 @@ def compute_shap_summary(
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(X)
 
+    # SHAP version compat: use positive-class values for binary classifiers
+    if isinstance(shap_values, list):
+        plot_shap_values = shap_values[1]  # class-1 contributions
+    else:
+        plot_shap_values = shap_values
+
     # 1. Summary bar plot (global feature importance)
     plt.figure(figsize=(10, 7))
-    shap.summary_plot(shap_values, X, plot_type="bar", show=False)
+    shap.summary_plot(plot_shap_values, X, plot_type="bar", show=False)
     plt.title("SHAP Global Feature Importance")
     plt.tight_layout()
     plt.savefig(output_dir / "shap_summary.png", dpi=150, bbox_inches="tight")
@@ -93,7 +99,7 @@ def compute_shap_summary(
 
     # 2. Beeswarm / dot summary plot (shows direction of effect)
     plt.figure(figsize=(10, 7))
-    shap.summary_plot(shap_values, X, show=False)
+    shap.summary_plot(plot_shap_values, X, show=False)
     plt.title("SHAP Summary (Beeswarm)")
     plt.tight_layout()
     plt.savefig(output_dir / "shap_beeswarm.png", dpi=150, bbox_inches="tight")
@@ -137,9 +143,19 @@ def local_explanation(
 
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(row)
-    base_value = float(explainer.expected_value)
 
-    contribs = shap_values[0]
+    # SHAP version compat: expected_value may be scalar or array
+    ev = explainer.expected_value
+    if hasattr(ev, '__len__'):
+        base_value = float(ev[1])  # positive class
+    else:
+        base_value = float(ev)
+
+    # shap_values may be list-of-arrays or single 2D array
+    if isinstance(shap_values, list):
+        contribs = shap_values[1][0]  # class-1, first row
+    else:
+        contribs = shap_values[0]
     feature_names = list(X.columns)
 
     # Build result dict

@@ -169,7 +169,21 @@ else:
     # Alternate data integration section
     st.divider()
     st.subheader("Alternate Data Integration")
-    st.markdown("""
+    # Load actual comparison metrics from the enriched model metadata
+    import json as _json
+    _enriched_meta_path = PROJECT_ROOT / "models" / "xgb_enriched_metadata.json"
+    _comparison = {}
+    if _enriched_meta_path.exists():
+        with open(_enriched_meta_path) as _mf:
+            _enriched_meta = _json.load(_mf)
+        _comparison = _enriched_meta.get("comparison", {})
+
+    _auc_app = _comparison.get("auc_application_only", "N/A")
+    _auc_alt = _comparison.get("auc_with_alternate_data", "N/A")
+    _auc_diff = _comparison.get("improvement", 0)
+    _diff_sign = "+" if _auc_diff >= 0 else ""
+
+    st.markdown(f"""
     InclusionScore AI integrates **5 alternate data tables** from the
     Home Credit Default Risk dataset (30M+ transaction records) to
     score applicants with little or no traditional credit history.
@@ -182,10 +196,12 @@ else:
     | **Previous Applications** (1.7M rows) | Loan application history | Approval ratio, previous credit amounts |
     | **Bureau Records** (1.7M rows) | External credit bureau | Active credit ratio, overdue amounts |
 
-    **Impact:** Adding 32 alternate data features improves AUC-ROC by
-    **+0.019** (0.750 -> 0.769) on the Home Credit dataset,
-    demonstrating that transaction patterns and payment behaviour
-    provide meaningful creditworthiness signals for unbanked populations.
+    **Experiment results:** Application-only AUC-ROC = **{_auc_app}**,
+    with alternate data = **{_auc_alt}** ({_diff_sign}{_auc_diff:.4f}).
+
+    > ⚠️ The enriched model currently underperforms the application-only
+    > baseline — additional feature engineering or hyperparameter tuning
+    > is needed to realise the value of alternate data.
 
     Run `python -m src.alternate_data` to reproduce this experiment.
     """)
@@ -214,6 +230,12 @@ if _ENRICHED_AVAILABLE:
             e_ext1 = st.number_input("External Source 1", value=0.5, key="e_ext1", format="%.3f")
             e_ext2 = st.number_input("External Source 2", value=0.6, key="e_ext2", format="%.3f")
             e_ext3 = st.number_input("External Source 3", value=0.55, key="e_ext3", format="%.3f")
+            e_registration = st.number_input("Days Since Registration (neg)", value=-12563, key="e_reg")
+            e_id_publish = st.number_input("Days Since ID Published (neg)", value=-4260, key="e_idp")
+            e_children = st.number_input("Number of Children", min_value=0, value=0, key="e_child")
+            e_fam = st.number_input("Family Members", min_value=1, value=2, key="e_fam")
+            e_region = st.number_input("Region Rating (1-3)", min_value=1, max_value=3, value=2, key="e_region")
+            e_phone = st.number_input("Days Since Last Phone Change (neg)", value=-1134, key="e_phone")
 
         with ecol2:
             st.markdown("**Alternate Data Features**")
@@ -237,15 +259,15 @@ if _ENRICHED_AVAILABLE:
             AMT_GOODS_PRICE=e_goods,
             DAYS_BIRTH=e_birth,
             DAYS_EMPLOYED=e_employed,
-            DAYS_REGISTRATION=-12563,
-            DAYS_ID_PUBLISH=-4260,
+            DAYS_REGISTRATION=e_registration,
+            DAYS_ID_PUBLISH=e_id_publish,
             EXT_SOURCE_1=e_ext1,
             EXT_SOURCE_2=e_ext2,
             EXT_SOURCE_3=e_ext3,
-            CNT_CHILDREN=0,
-            CNT_FAM_MEMBERS=2,
-            REGION_RATING_CLIENT=2,
-            DAYS_LAST_PHONE_CHANGE=-1134,
+            CNT_CHILDREN=e_children,
+            CNT_FAM_MEMBERS=e_fam,
+            REGION_RATING_CLIENT=e_region,
+            DAYS_LAST_PHONE_CHANGE=e_phone,
             inst_late_ratio=e_inst_late,
             inst_avg_payment_ratio=e_inst_pay_ratio,
             inst_underpaid_ratio=e_inst_underpaid,

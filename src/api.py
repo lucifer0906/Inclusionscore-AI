@@ -189,9 +189,16 @@ def score(applicant: ApplicantInput) -> ScoreResponse:
     proba = float(model.predict_proba(X)[0, 1])
     decision = _make_decision(proba, age=applicant.age)
 
-    # Per-applicant SHAP values for genuine explainability
+    # Per-applicant SHAP values for genuine explainability.
+    # SHAP version compat: shap_values() may return a list of 2D arrays
+    # (one per class) or a single 2D array.  We always want the positive-
+    # class (class 1) contributions for the single input row.
     shap_values = explainer.shap_values(X)
-    contributions = shap_values[0]  # single-row array
+    if isinstance(shap_values, list):
+        # Older SHAP: list of [class0_array, class1_array]
+        contributions = shap_values[1][0]  # class-1, first row
+    else:
+        contributions = shap_values[0]  # 2D array, first row
     feature_names = list(X.columns)
     values = X.iloc[0].values
 

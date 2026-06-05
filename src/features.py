@@ -147,18 +147,20 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # Age bins (captures non-linear age effects)
-    df["AgeBin"] = pd.cut(
+    age_bins = pd.cut(
         df["age"],
         bins=[0, 30, 45, 60, 120],
         labels=[0, 1, 2, 3],
-    ).astype(int)
+    )
+    df["AgeBin"] = age_bins.cat.codes.clip(lower=0).astype(int)  # NaN → -1, clip to 0, cast to int
 
     # Credit utilization buckets
-    df["CreditUtilBucket"] = pd.cut(
+    util_bins = pd.cut(
         df["RevolvingUtilizationOfUnsecuredLines"],
         bins=[-0.01, 0.25, 0.50, 0.75, 1.01],
         labels=[0, 1, 2, 3],
-    ).astype(int)
+    )
+    df["CreditUtilBucket"] = util_bins.cat.codes.clip(lower=0).astype(int)
 
     return df
 
